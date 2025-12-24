@@ -16,7 +16,7 @@ st.markdown("""
 # --- 2. 全局数据库 (100人同步) ---
 @st.cache_resource
 def init_global_db():
-    initial_assets = ["比特币", "A股", "标普500", "美债", "EMXC", "等权组合"]
+    initial_assets = ["A", "B", "C", "D", "E"]
     return {
         "round": 1,
         "asset_names": initial_assets,
