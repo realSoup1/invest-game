@@ -21,9 +21,9 @@ def init_global_db():
     # 只要服务器不重启，这个字典在所有人的网页间共享
     return {
         "round": 1,
-        "asset_names": ["比特币", "A股", "标普500", "美债", "ACWI", "等权组合"],
+        "asset_names": ["比特币", "A股", "标普500", "美债", "EMXC", "等权组合"],
         "market_data": pd.DataFrame(np.random.uniform(-10, 20, size=(10, 6)).round(2), 
-                                   columns=["比特币", "A股", "标普500", "美债", "ACWI", "等权组合"]),
+                                   columns=["比特币", "A股", "标普500", "美债", "EMXC", "等权组合"]),
         "players": {} # { "姓名": {"pwd": "...", "cash": 100000, "assets": {...}, "loan": 0, "net_worth": 100000} }
     }
 
@@ -52,7 +52,7 @@ if role == "👨‍🏫 老师后台":
     st.title("👨‍🏫 老师管理后台")
     master_pwd = st.text_input("请输入管理权限密码", type="password")
     
-    if master_pwd == "8888":
+    if master_pwd == "67":
         tab_setting, tab_control, tab_rank = st.tabs(["⚙️ 资产设定", "🚀 轮次控制", "📊 玩家监控"])
         
         with tab_setting:
