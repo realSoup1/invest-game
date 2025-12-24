@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# --- 1. 界面净化 ---
+# --- 1. 界面美化与净化 ---
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
@@ -13,7 +13,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. 全局数据库 (100人同步) ---
+# --- 2. 全局共享数据库 ---
 @st.cache_resource
 def init_global_db():
     initial_assets = ["A", "B", "C", "D", "E"]
@@ -29,15 +29,20 @@ def init_global_db():
 
 db = init_global_db()
 
-# --- 3. 金融指标计算 ---
+# --- 3. 金融指标计算 (修复相关性计算逻辑) ---
 def get_metrics(df):
     if df.empty or len(df.columns) == 0:
         return pd.DataFrame(), pd.DataFrame()
+    
+    # 计算基础指标
     m = pd.DataFrame(index=df.columns)
     m["算术平均(%)"] = df.mean().round(2)
     m["标准差(风险)"] = df.std().round(2)
     m["年化收益(CAGR%)"] = df.apply(lambda x: (np.prod(1 + x/100)**(1/len(x)) - 1) * 100).round(2)
-    return m, df.corr().round(2)
+    
+    # 计算相关性矩阵
+    corr_matrix = df.corr().round(2)
+    return m, corr_matrix
 
 # --- 4. 侧边栏身份切换 ---
 with st.sidebar:
@@ -48,12 +53,12 @@ with st.sidebar:
     if st.button("🔄 同步刷新全场"):
         st.rerun()
 
-# --- 5. 老师后台逻辑 ---
+# --- 5. 老师后台逻辑 (修复模块显示问题) ---
 if role == "👨‍🏫 老师后台":
     st.title("👨‍🏫 老师管理后台")
     master_pwd = st.text_input("请输入管理权限密码", type="password")
     
-    if master_pwd == "67":
+    if master_pwd == "8888":
         tab_setting, tab_control, tab_rank = st.tabs(["⚙️ 资产维度增减", "🚀 轮次控制", "📊 玩家监控"])
         
         with tab_setting:
@@ -67,7 +72,7 @@ if role == "👨‍🏫 老师后台":
                     db["asset_names"].append(new_asset_name)
                     # 给新资产随机生成10年收益数据
                     db["market_data"][new_asset_name] = np.random.uniform(-5, 15, size=10).round(2)
-                    # 同步更新存量玩家持仓
+                    # 同播同步存量玩家持仓
                     for p in db["players"].values():
                         p["assets"][new_asset_name] = 0.0
                     st.success(f"已添加资产：{new_asset_name}")
@@ -80,7 +85,6 @@ if role == "👨‍🏫 老师后台":
                 if len(db["asset_names"]) > 1:
                     db["asset_names"].remove(asset_to_del)
                     db["market_data"] = db["market_data"].drop(columns=[asset_to_del])
-                    # 同步移除玩家持仓中的该项
                     for p in db["players"].values():
                         if asset_to_del in p["assets"]:
                             del p["assets"][asset_to_del]
@@ -93,9 +97,18 @@ if role == "👨‍🏫 老师后台":
             st.subheader("未来10年收益率明细 (%)")
             db["market_data"] = st.data_editor(db["market_data"], use_container_width=True).round(2)
             
+            # --- 关键修复：确保此模块在老师端始终显示 ---
+            st.divider()
+            st.subheader("📈 实时金融指标预览")
             m_df, c_df = get_metrics(db["market_data"])
-            st.write("**实时金融指标预览：**")
-            st.dataframe(m_df, use_container_width=True)
+            
+            col_m1, col_m2 = st.columns([1, 1])
+            with col_m1:
+                st.write("**核心指标 (平均/风险/年化)**")
+                st.dataframe(m_df, use_container_width=True)
+            with col_m2:
+                st.write("**相关性矩阵 (Correlation)**")
+                st.dataframe(c_df, use_container_width=True)
 
         with tab_control:
             st.subheader(f"当前轮次: {db['round']}")
