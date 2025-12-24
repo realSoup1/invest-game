@@ -2,198 +2,197 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# --- 页面配置 ---
-st.set_page_config(page_title="高级投资博弈模拟器", layout="wide")
+# --- 页面基础配置 ---
+st.set_page_config(page_title="财富博弈实战营", layout="wide", initial_sidebar_state="expanded")
+
+# --- 自定义 CSS 提升美观度 ---
+st.markdown("""
+    <style>
+    .main { background-color: #f8f9fa; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .portfolio-card { background-color: #ffffff; padding: 20px; border-radius: 15px; border-left: 5px solid #1f77b4; }
+    </style>
+    """, unsafe_allow_html=True)
 
 # --- 初始化全局状态 ---
 if 'round' not in st.session_state:
     st.session_state.round = 1
 if 'players' not in st.session_state:
     st.session_state.players = {}
+if 'asset_names' not in st.session_state:
+    st.session_state.asset_names = ["比特币", "A股", "标普500", "美债", "ACWI", "等权组合"]
 if 'market_data' not in st.session_state:
-    # 默认10年收益率数据（百分比）
-    default_data = {
-        "比特币": [120, -60, 150, 40, -20, 100, 30, -50, 80, 20],
-        "A股": [15, -20, 30, 5, -10, 25, 10, -15, 20, 5],
-        "标普500": [12, 10, -5, 15, 20, 8, 12, -10, 15, 10],
-        "美债": [3, 2, 4, 1, 2, 3, 2, 5, 2, 3],
-        "ACWI": [8, 5, -2, 10, 12, 6, 8, -5, 10, 7],
-        "等权组合": [31.6, -12.6, 35.4, 14.2, 0.8, 28.4, 12.4, -13, 25.4, 9]
-    }
-    st.session_state.market_data = pd.DataFrame(default_data)
+    # 预设数据，保留两位小数
+    data = np.random.uniform(-20, 40, size=(10, 6)).round(2)
+    st.session_state.market_data = pd.DataFrame(data, columns=st.session_state.asset_names)
 
-# --- 金融计算函数 ---
-def calculate_metrics(df):
-    metrics = {}
-    # 算术平均
-    metrics['mean'] = df.mean()
-    # 标准差
-    metrics['std'] = df.std()
-    # 年化收益率 (Geometric Mean)
-    metrics['cagr'] = df.apply(lambda x: (np.prod(1 + x/100)**(1/len(x)) - 1) * 100)
-    # 相关性矩阵
-    metrics['corr'] = df.corr()
+# --- 金融指标计算 ---
+def get_metrics(df):
+    metrics = pd.DataFrame({
+        "算术平均(%)": df.mean().round(2),
+        "标准差(风险)": df.std().round(2),
+        "年化收益(CAGR%)": (df.apply(lambda x: (np.prod(1 + x/100)**(1/len(x)) - 1) * 100)).round(2)
+    })
     return metrics
 
-metrics = calculate_metrics(st.session_state.market_data)
+# --- 侧边栏角色切换 ---
+with st.sidebar:
+    st.title("🧧 财富博弈系统")
+    role = st.selectbox("我的身份", ["👨‍🎓 学生端", "👨‍🏫 老师控制台"])
+    st.divider()
+    if st.button("🔄 刷新全场数据"):
+        st.rerun()
 
-# --- 侧边栏 ---
-st.sidebar.title("🎮 游戏控制中心")
-role = st.sidebar.selectbox("切换角色", ["学生端", "老师端"])
-
-# ----------------- 老师端 -----------------
-if role == "老师端":
-    st.title("👨‍🏫 教学设置与控制")
+# ----------------- 老师控制台 -----------------
+if "老师控制台" in role:
+    st.title("👨‍🏫 教学后台管理")
     pwd = st.text_input("管理密码", type="password")
+    
     if pwd == "8888":
-        tab1, tab2 = st.tabs(["数据预设", "轮次控制"])
+        t1, t2 = st.tabs(["💡 资产名称与数据设定", "🎮 进程控制"])
         
-        with tab1:
-            st.subheader("预设未来10年收益率 (%)")
-            edited_df = st.data_editor(st.session_state.market_data, num_rows="fixed")
-            if st.button("保存并更新指标"):
-                st.session_state.market_data = edited_df
-                st.rerun()
+        with t1:
+            st.subheader("1. 自定义资产名称")
+            new_names = []
+            cols = st.columns(3)
+            for i, old_name in enumerate(st.session_state.asset_names):
+                with cols[i % 3]:
+                    name = st.text_input(f"资产 {i+1} 名称", value=old_name)
+                    new_names.append(name)
             
+            if st.button("确认修改名称"):
+                st.session_state.asset_names = new_names
+                st.session_state.market_data.columns = new_names
+                st.success("资产名称已同步更新！")
+                st.rerun()
+
             st.divider()
-            st.subheader("📊 自动计算的金融指标")
-            col_m1, col_m2 = st.columns(2)
-            col_m1.write("算术平均 vs 年化收益率 (CAGR)")
-            col_m1.dataframe(pd.DataFrame({"算术平均": metrics['mean'], "年化收益": metrics['cagr']}))
-            col_m2.write("风险指标 (标准差)")
-            col_m2.dataframe(metrics['std'])
-            st.write("资产相关性矩阵")
-            st.dataframe(metrics['corr'])
-
-        with tab2:
-            st.subheader(f"当前阶段：第 {st.session_state.round} 轮")
-            next_btn = st.button("➡️ 开启下一轮")
-            reset_btn = st.button("🔄 重置全场游戏")
+            st.subheader("2. 设定未来10年收益率 (%)")
+            st.session_state.market_data = st.data_editor(st.session_state.market_data, num_rows="fixed").round(2)
             
-            if next_btn and st.session_state.round < 4:
-                # 结算当前轮次收益
-                for p_name in st.session_state.players:
-                    p = st.session_state.players[p_name]
-                    # 每一轮模拟一个随机年份的收益率
-                    year_idx = st.session_state.round - 1 
-                    round_returns = st.session_state.market_data.iloc[year_idx]
-                    
-                    total_asset_val = 0
-                    for asset, val in p['assets'].items():
-                        new_val = val * (1 + round_returns[asset]/100)
-                        p['assets'][asset] = new_val
-                        total_asset_val += new_val
-                    
-                    # 扣除利息
-                    p['cash'] -= p['loan'] * 0.1
-                    p['net_worth'] = p['cash'] + total_asset_val
-                    
-                    # 记录破产
-                    if p['net_worth'] <= 0:
-                        p['is_bust'] = True
-                
-                st.session_state.round += 1
-                st.success("轮次已切换，数据已更新")
-                st.rerun()
+        with t2:
+            st.subheader(f"当前进度：第 {st.session_state.round} / 4 轮")
+            c1, c2 = st.columns(2)
+            if c1.button("🔥 结算并进入下一轮", use_container_width=True):
+                if st.session_state.round <= 4:
+                    year_idx = st.session_state.round - 1
+                    round_rets = st.session_state.market_data.iloc[year_idx]
+                    for p in st.session_state.players.values():
+                        # 计算资产变动
+                        current_inv = 0
+                        for asset in st.session_state.asset_names:
+                            p['assets'][asset] *= (1 + round_rets[asset]/100)
+                            current_inv += p['assets'][asset]
+                        # 利息与净值更新
+                        p['cash'] -= p['loan'] * 0.1
+                        p['net_worth'] = p['cash'] + current_inv
+                        if p['net_worth'] < 0: p['is_bust'] = True
+                    st.session_state.round += 1
+                    st.balloons()
+                    st.rerun()
 
-            if reset_btn:
+            if c2.button("🚫 重置整个游戏", use_container_width=True):
                 st.session_state.players = {}
                 st.session_state.round = 1
                 st.rerun()
 
 # ----------------- 学生端 -----------------
 else:
-    st.title(f"📈 投资博弈：第 {st.session_state.round} 轮")
-    name = st.text_input("输入你的姓名登录", key="s_name")
+    st.title(f"🚀 投资实战营 - 第 {st.session_state.round} 轮")
+    name = st.text_input("输入你的姓名进入市场", key="student_name")
     
     if name:
         if name not in st.session_state.players:
             st.session_state.players[name] = {
                 "cash": 100000.0, "loan": 0.0, "net_worth": 100000.0,
-                "is_bust": False, "conservative_score": 0,
-                "assets": {c: 0.0 for c in st.session_state.market_data.columns}
+                "is_bust": False, "assets": {n: 0.0 for n in st.session_state.asset_names}
             }
         
         p = st.session_state.players[name]
         
         if p['is_bust']:
-            st.error("💀 你已经破产了！(爆仓者)")
-        
-        # --- 信息披露区 ---
-        st.info("📢 本轮解锁信息：")
-        if st.session_state.round >= 1:
-            st.write("**[轮次1消息] 各资产历史算术平均收益率：**")
-            st.table(metrics['mean'])
-        if st.session_state.round >= 2:
-            st.write("**[轮次2消息] 风险警示！各资产标准差（波动率）：**")
-            st.table(metrics['std'])
-        if st.session_state.round >= 3:
-            st.warning("**[轮次3消息] 银行杠杆服务已开启！你可以申请借贷。**")
-        if st.session_state.round >= 4:
-            st.write("**[轮次4消息] 终极情报：资产收益率相关性矩阵：**")
-            st.dataframe(metrics['corr'])
+            st.error("💀 您已爆仓！资产净值归零，请反思杠杆风险。")
 
-        # --- 仪表盘 ---
-        c1, c2, c3 = st.columns(3)
-        c1.metric("总资产", f"¥{int(p['net_worth'])}")
-        c2.metric("现金", f"¥{int(p['cash'])}")
-        c3.metric("负债", f"¥{int(p['loan'])}")
+        # --- 核心仪表盘 ---
+        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1.metric("当前总资产", f"¥{p['net_worth']:,.2f}")
+        col_m2.metric("可用现金", f"¥{p['cash']:,.2f}")
+        col_m3.metric("总负债", f"¥{p['loan']:,.2f}", delta="-10% 利息/轮", delta_color="inverse")
 
-        # --- 操作区 ---
-        st.divider()
-        col_inv, col_loan = st.columns([2, 1])
+        # --- 信息披露卡片 ---
+        with st.expander("📊 查看本轮市场内参", expanded=True):
+            metrics_df = get_metrics(st.session_state.market_data)
+            show_cols = []
+            if st.session_state.round >= 1: show_cols.append("算术平均(%)")
+            if st.session_state.round >= 2: show_cols.append("标准差(风险)")
+            if st.session_state.round >= 4:
+                st.write("**相关性矩阵：**")
+                st.dataframe(st.session_state.market_data.corr().round(2), use_container_width=True)
+            st.table(metrics_df[show_cols])
+
+        # --- 交易操作区 ---
+        st.subheader("🎯 资产配置决策")
+        t_col1, t_col2 = st.columns([2, 1])
         
-        with col_inv:
-            st.subheader("配置你的投资组合")
-            selected_asset = st.selectbox("选择资产", st.session_state.market_data.columns)
-            inv_amt = st.number_input("金额", min_value=0, step=5000)
-            if st.button("确认买入"):
-                if inv_amt <= p['cash']:
-                    p['assets'][selected_asset] += inv_amt
-                    p['cash'] -= inv_amt
-                    st.success(f"已买入 {selected_asset}")
+        with t_col1:
+            asset_choice = st.segmented_control("选择投向", st.session_state.asset_names)
+            buy_amt = st.number_input("拟投入金额", min_value=0.0, step=5000.0)
+            if st.button("确认买入资产", use_container_width=True):
+                if buy_amt <= p['cash']:
+                    p['assets'][asset_choice] += buy_amt
+                    p['cash'] -= buy_amt
+                    st.success(f"成功买入 {asset_choice}")
                     st.rerun()
                 else:
-                    st.error("钱不够了！")
+                    st.error("现金不足，请先融资！")
 
-        with col_loan:
-            st.subheader("金融杠杆")
+        with t_col2:
             if st.session_state.round >= 3:
-                loan_amt = st.number_input("借贷金额", min_value=0, max_value=200000, step=10000)
-                if st.button("申请贷款"):
-                    p['loan'] += loan_amt
-                    p['cash'] += loan_amt
-                    st.warning("贷款成功，注意每轮10%的利息支出！")
+                loan_req = st.number_input("融资额度", min_value=0, max_value=200000, step=10000)
+                if st.button("申请银行贷款", use_container_width=True):
+                    p['loan'] += loan_req
+                    p['cash'] += loan_req
+                    st.warning("贷款已到账")
             else:
-                st.write("锁定中，第三轮开放")
+                st.info("🏦 银行信贷窗口在第三轮开放")
 
-        # --- 持仓明细 ---
-        st.subheader("我的当前持仓")
-        st.write(p['assets'])
+        # --- 美化后的持仓展示 ---
+        st.divider()
+        st.subheader("💼 我的投资组合明细")
+        
+        # 将持仓转换为DataFrame进行美化展示
+        portfolio_data = []
+        for asset in st.session_state.asset_names:
+            val = p['assets'][asset]
+            weight = (val / p['net_worth'] * 100) if p['net_worth'] > 0 else 0
+            portfolio_data.append({"资产名称": asset, "当前市值": round(val, 2), "配置比例(%)": round(weight, 2)})
+        
+        pdf = pd.DataFrame(portfolio_data)
+        
+        # 使用 Streamlit 的列配置功能增加进度条效果
+        st.dataframe(
+            pdf,
+            column_config={
+                "配置比例(%)": st.column_config.ProgressColumn(
+                    "仓位权重",
+                    help="该资产占总资产的百分比",
+                    format="%f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "当前市值": st.column_config.NumberColumn(format="¥%.2f")
+            },
+            hide_index=True,
+            use_container_width=True
+        )
 
-# --- 全场排行榜 (底部常驻) ---
-st.divider()
-st.subheader("🏆 实时战报")
+# --- 底部排行榜 ---
 if st.session_state.players:
-    data_list = []
-    for n, info in st.session_state.players.items():
-        data_list.append({
-            "姓名": n,
-            "总资产": info['net_worth'],
-            "状态": "爆仓" if info['is_bust'] else "活跃",
-            "现金比例": (info['cash'] / info['net_worth']) if info['net_worth'] > 0 else 0
-        })
-    df_rank = pd.DataFrame(data_list).sort_values("总资产", ascending=False)
-    st.dataframe(df_rank)
-    
-    if st.session_state.round == 4:
-        st.header("🏁 最终评奖")
-        col_a, col_b, col_c = st.columns(3)
-        col_a.success(f"🥇 优胜者：{df_rank.iloc[0]['姓名']}")
-        
-        bust_players = [n for n, info in st.session_state.players.items() if info['is_bust']]
-        if bust_players:
-            col_b.error(f"💀 最快爆仓者：{bust_players[0]}")
-        
-        conservative = df_rank.sort_values("现金比例", ascending=False).iloc[0]['姓名']
-        col_c.info(f"🐢 最保守投资者：{conservative}")
+    with st.sidebar:
+        st.divider()
+        st.subheader("🏆 实时财富榜")
+        rank_list = pd.DataFrame([
+            {"姓名": k, "总资产": int(v['net_worth'])} 
+            for k, v in st.session_state.players.items()
+        ]).sort_values("总资产", ascending=False)
+        st.dataframe(rank_list, hide_index=True)
