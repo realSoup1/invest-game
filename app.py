@@ -81,7 +81,8 @@ if role == "👨‍🏫 老师后台":
             m_df, c_df = calculate_metrics(db["market_data"])
             st.dataframe(m_df, use_container_width=True)
             st.write("相关性系数：")
-            st.dataframe(c_df.style.background_gradient(cmap='coolwarm'), use_container_width=True)
+            # 移除 .style.background_gradient，改为直接显示数据表格，不再依赖 matplotlib
+            st.dataframe(c_df, use_container_width=True)
 
         with t2:
             st.subheader(f"当前轮次: {db['round']}")
