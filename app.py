@@ -17,8 +17,7 @@ st.markdown("""
 def init_global_db():
     assets = ["A资产", "B资产", "C资产", "D资产", "E资产"]
     
-    # --- 这里填入了您图片中的精确数据 ---
-    # 数据顺序对应第1年到第10年
+    # --- 预置的未来10年收益率数据 ---
     data = {
         "A资产": [-7.4, -0.8, 45.7, 46.3, 25.5, -39.5, 26.4, 51.8, 22.5, -24.8],
         "B资产": [-11.3, 21.8, -25.3, 36.1, 27.2, -5.2, -21.6, -11.4, 14.7, 17.4],
@@ -31,7 +30,6 @@ def init_global_db():
         "round": 1,
         "is_settled": False,
         "asset_names": assets,
-        # 创建固定数据表
         "market_data": pd.DataFrame(data),
         "players": {}, 
     }
@@ -40,12 +38,11 @@ db = init_global_db()
 
 # --- 3. 核心计算与格式化工具 ---
 def get_raw_metrics(df):
-    """计算原始指标数据，不带样式"""
+    """计算原始指标数据"""
     if df.empty: return pd.DataFrame(), pd.DataFrame()
     m = pd.DataFrame(index=df.columns)
     m["算术平均"] = df.mean()
     m["标准差(风险)"] = df.std()
-    # 相关性矩阵 * 100 方便显示百分比
     corr = df.corr() * 100
     return m, corr
 
@@ -70,10 +67,8 @@ if role == "👨‍🏫 老师后台":
         
         with t1:
             st.subheader("资产收益率矩阵 (10年数据)")
-            # 允许老师修改数据，保持5类资产
             db["market_data"] = st.data_editor(db["market_data"], use_container_width=True).round(2)
             
-            # 老师端始终看到所有信息
             m_raw, c_raw = get_raw_metrics(db["market_data"])
             
             c_view1, c_view2 = st.columns(2)
@@ -86,29 +81,71 @@ if role == "👨‍🏫 老师后台":
 
         with t2:
             if not db["is_settled"]:
-                if st.button("🔔 结算本轮游戏 (执行十年复利计算)", use_container_width=True):
-                    # --- 复利计算逻辑 ---
-                    # (1+r1)*(1+r2)...
-                    multipliers = (1 + db["market_data"] / 100).prod()
+                if st.button("🔔 结算本轮游戏 (计算MOC、波动率与夏普)", use_container_width=True):
+                    # --- 复杂的逐年结算逻辑 (为了计算波动率) ---
+                    # 获取每年的收益率倍数 (1 + r/100)
+                    annual_multipliers = 1 + db["market_data"] / 100
                     
                     for name, p in db["players"].items():
-                        final_portfolio_value = 0
-                        for asset in db["asset_names"]:
-                            invested = p["current"]["assets"].get(asset, 0)
-                            final_portfolio_value += invested * multipliers[asset]
+                        # 1. 初始化模拟状态
+                        current_holdings = p["current"]["assets"].copy() # 资产持有量
+                        current_cash = p["current"]["cash"] # 现金持有量
                         
-                        total_end_assets = final_portfolio_value + p["current"]["cash"]
-                        debt_total = p["current"]["loan"] * 1.10 # 10% 利息
-                        final_net_worth = total_end_assets - debt_total
+                        # 记录每年年末的总资产价值 (用于算波动率)
+                        # 初始价值 (T=0)
+                        portfolio_values = [current_cash + sum(current_holdings.values())]
                         
+                        # 2. 逐年模拟 (T=1 到 T=10)
+                        for year in range(10):
+                            # 获取当年的各资产收益率
+                            year_rates = annual_multipliers.iloc[year]
+                            
+                            # 更新持仓价值
+                            for asset in db["asset_names"]:
+                                current_holdings[asset] *= year_rates[asset]
+                            
+                            # 计算当年总值 (假设未投资现金收益为0)
+                            total_val = current_cash + sum(current_holdings.values())
+                            portfolio_values.append(total_val)
+                        
+                        # 3. 计算金融指标
+                        # 计算10个年度的收益率序列
+                        yearly_returns = []
+                        for i in range(1, 11):
+                            r = (portfolio_values[i] - portfolio_values[i-1]) / portfolio_values[i-1]
+                            yearly_returns.append(r)
+                        
+                        # A. 波动率 (标准差)
+                        volatility = np.std(yearly_returns)
+                        
+                        # B. 年化收益率 CAGR (用于计算夏普)
+                        start_val = portfolio_values[0]
+                        end_val = portfolio_values[-1]
+                        cagr = (end_val / start_val) ** (1/10) - 1 if start_val > 0 else 0
+                        
+                        # C. 夏普比率 (Rf = 4%)
+                        risk_free_rate = 0.04
+                        if volatility == 0:
+                            sharpe = 0
+                        else:
+                            sharpe = (cagr - risk_free_rate) / volatility
+
+                        # D. 最终净资产与MOC
+                        # 扣除负债和 4% 利息
+                        debt_repayment = p["current"]["loan"] * 1.04 
+                        final_net_worth = end_val - debt_repayment
                         moc = final_net_worth / 100000.0
                         
+                        # 4. 存入历史记录
                         p["history"][db["round"]] = {
                             "net_worth": int(final_net_worth),
                             "moc": round(moc, 2),
+                            "volatility": volatility, # 存入波动率
+                            "sharpe": round(sharpe, 2), # 存入夏普
                             "loan": int(p["current"]["loan"]),
                             "cash": int(p["current"]["cash"])
                         }
+                    
                     db["is_settled"] = True
                     st.balloons(); st.rerun()
             else:
@@ -128,11 +165,16 @@ if role == "👨‍🏫 老师后台":
                     if db["round"] in p["history"]:
                         h = p["history"][db["round"]]
                         monitor_data.append({
-                            "学生姓名": name, "净资产": h["net_worth"], "负债": h["loan"], 
-                            "剩余现金": h["cash"], "10年MOC": h["moc"]
+                            "学生姓名": name, 
+                            "净资产": h["net_worth"], 
+                            "MOC": h["moc"],
+                            "波动率": f"{h['volatility']*100:.2f}%",  # 新增展示
+                            "夏普比率": h["sharpe"],                  # 新增展示
+                            "负债": h["loan"]
                         })
                 if monitor_data:
-                    st.table(pd.DataFrame(monitor_data))
+                    st.write(f"**第 {db['round']} 轮 - 玩家详细表现**")
+                    st.dataframe(pd.DataFrame(monitor_data).style.set_properties(**{'text-align': 'center'}), use_container_width=True)
 
 # --- 6. 学生端 ---
 else:
@@ -157,30 +199,41 @@ else:
         # 结算后展示
         if db["is_settled"] and db["round"] in p["history"]:
             res = p["history"][db["round"]]
-            st.success(f"本轮结算完成！十年后您的净资产为：¥{res['net_worth']:,}，MOC为：{res['moc']}x")
+            st.success("本轮结算完成！以下是您的十年投资成绩单：")
             
-            st.write("**历史各轮 MOC 记录：**")
-            h_df = pd.DataFrame([{"轮次": f"第{k}轮", "MOC值": f"{v['moc']}x"} for k, v in p["history"].items()])
-            st.table(h_df)
-            st.info("等待老师开启下一轮...")
+            # --- 结果核心指标展示 ---
+            rc1, rc2, rc3 = st.columns(3)
+            rc1.metric("期末净资产", f"¥{res['net_worth']:,}")
+            rc2.metric("投资回报倍数 (MOC)", f"{res['moc']}x")
+            rc3.metric("组合波动率 (风险)", f"{res['volatility']*100:.2f}%") # 学生端新增波动率
+            
+            st.write("**📜 历史战绩记录：**")
+            # 历史表格也加上波动率
+            h_data = []
+            for k, v in p["history"].items():
+                h_data.append({
+                    "轮次": f"第{k}轮", 
+                    "MOC值": f"{v['moc']}x",
+                    "波动率": f"{v['volatility']*100:.2f}%"
+                })
+            st.table(pd.DataFrame(h_data))
+            
+            st.info("请等待老师开启下一轮...")
             st.stop()
 
         if p["current"]["submitted"]:
             st.warning("决策已锁定，请耐心等待老师结算...")
             if st.button("重回决策界面"): p["current"]["submitted"] = False; st.rerun()
         else:
-            # --- 学生端信息分阶段披露逻辑 ---
             with st.expander("📊 查看市场情报 (信息随轮次解锁)", expanded=True):
                 m_raw, c_raw = get_raw_metrics(db["market_data"])
                 
                 if db["round"] == 1:
                     st.info("💡 第1轮情报：仅展示算术平均收益")
-                    # 只取 "算术平均" 列
                     st.dataframe(style_df(m_raw[["算术平均"]]), use_container_width=True)
                 
                 elif db["round"] == 2:
                     st.info("💡 第2轮情报：新增标准差(风险)数据")
-                    # 取 "算术平均" 和 "标准差"
                     st.dataframe(style_df(m_raw[["算术平均", "标准差(风险)"]]), use_container_width=True)
                 
                 elif db["round"] == 3:
@@ -209,10 +262,11 @@ else:
                         st.rerun()
                     else: st.error("现金不足")
                 
-                # --- 杠杆功能仅在第3、4轮开放 ---
+                # --- 杠杆功能 ---
                 if db["round"] >= 3:
                     st.divider()
-                    st.markdown("**🏦 银行融资窗口 (年利息10%)**")
+                    # 修改点：利率改为 4%
+                    st.markdown("**🏦 银行融资窗口 (年利息 4%)**")
                     l_amt = st.number_input("申请借贷 (上限20万)", min_value=0, max_value=200000, step=10000)
                     if st.button("确认融资"):
                         if p["current"]["loan"] + l_amt <= 200000:
